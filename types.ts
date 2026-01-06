@@ -53,3 +53,22 @@ export interface BackgroundSettings {
   overlayOpacity: number;
   fadingCorner: boolean;
 }
+
+export interface Project {
+  id: string;
+  name: string;
+  timestamp: number;
+  slides: SlideData[];
+  theme: CarouselTheme;
+  aspectRatio: AspectRatio;
+  slideLayout: SlideLayout;
+  textEffect: TextEffect;
+  overlayImageUrl: string;
+  titleColor: string;
+  bgSettings: BackgroundSettings;
+  clnLinks: string[];
+  keyMessages: string[];
+  activeProfileType: 'personal' | 'company';
+  personalProfile: BrandingProfile;
+  companyProfile: BrandingProfile;
+}

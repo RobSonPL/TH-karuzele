@@ -76,21 +76,21 @@ const Slide: React.FC<SlideProps> = ({
     if (isLast) {
       return (
         <div className="relative z-10 flex flex-col items-center justify-center p-12 w-full h-full text-center">
-           <div className="mb-8 scale-110">
-             {profile.logoUrl && <img src={profile.logoUrl} alt="Logo" className="h-12 object-contain mx-auto mb-4" />}
-             {profile.photoUrl && <img src={profile.photoUrl} alt="Avatar" className="w-20 h-20 rounded-full border-4 border-current border-opacity-20 shadow-xl object-cover mx-auto" />}
+           <div className="mb-6 scale-100">
+             {profile.logoUrl && <img src={profile.logoUrl} alt="Logo" className="h-10 object-contain mx-auto mb-4" />}
+             {profile.photoUrl && <img src={profile.photoUrl} alt="Avatar" className="w-16 h-16 rounded-full border-4 border-current border-opacity-20 shadow-xl object-cover mx-auto" />}
            </div>
-           <h2 className={`text-4xl font-black mb-4 ${getEffectClass()}`} style={{ color: titleColor || 'inherit' }}>Dziękuję za przeczytanie!</h2>
-           <p className="text-xl opacity-80 mb-8 italic">Jeśli Ci się podobało, zaobserwuj po więcej.</p>
+           <h2 className={`text-3xl font-black mb-4 leading-snug ${getEffectClass()}`} style={{ color: titleColor || 'inherit' }}>Dziękuję za przeczytanie!</h2>
+           <p className="text-lg opacity-80 mb-6 italic">Jeśli Ci się podobało, zaobserwuj po więcej.</p>
            
            {referenceLinks && referenceLinks.filter(l => l.trim()).length > 0 && (
-             <div className="w-full mt-4 p-4 bg-current bg-opacity-10 rounded-2xl border border-current border-opacity-20 backdrop-blur-sm shadow-sm">
-               <span className="text-[10px] font-black uppercase tracking-widest opacity-70 block mb-2">Referencje cln.sh</span>
+             <div className="w-full p-4 bg-current bg-opacity-10 rounded-2xl border border-current border-opacity-20 backdrop-blur-sm shadow-sm">
+               <span className="text-[9px] font-black uppercase tracking-widest opacity-70 block mb-2">Referencje cln.sh</span>
                <div className="flex flex-col gap-1 items-center">
                  {referenceLinks.filter(l => l.trim()).slice(0, 3).map((link, i) => (
-                   <a key={i} href={link} target="_blank" rel="noreferrer" className="text-xs flex items-center gap-1 hover:underline text-blue-500 font-bold">
+                   <div key={i} className="text-[11px] flex items-center gap-1 text-blue-500 font-bold">
                      <ExternalLink size={10}/> {link.replace('https://', '')}
-                   </a>
+                   </div>
                  ))}
                </div>
              </div>
@@ -99,34 +99,41 @@ const Slide: React.FC<SlideProps> = ({
       );
     }
 
-    let containerClass = "relative z-10 flex flex-col p-12 w-full h-full ";
-    let titleClass = `font-bold mb-6 leading-tight ${getEffectClass()} `;
+    // Increased vertical padding to clear logo and footer branding
+    let containerClass = "relative z-10 flex flex-col px-12 pt-28 pb-32 w-full h-full ";
+    let titleClass = `font-bold mb-8 leading-snug ${getEffectClass()} `;
+    let contentClass = "leading-relaxed opacity-90 ";
 
     if (layout === 'impact') {
       containerClass += "justify-center items-center text-center";
-      titleClass += isFirst ? "text-7xl uppercase font-bebas italic tracking-tighter" : "text-4xl uppercase font-bebas tracking-tighter";
+      titleClass += isFirst ? "text-6xl uppercase font-bebas italic tracking-tighter" : "text-3xl uppercase font-bebas tracking-tighter";
+      contentClass += isFirst ? "text-xl" : "text-lg";
     } else if (layout === 'quote') {
       containerClass += "justify-center text-left italic border-l-8 border-current border-opacity-20 ml-8";
-      titleClass += "text-3xl";
+      titleClass += "text-2xl";
+      contentClass += "text-lg";
     } else if (layout === 'top-text') {
-      containerClass += "justify-start text-center pt-24";
-      titleClass += "text-4xl";
+      containerClass += "justify-start text-center pt-32";
+      titleClass += "text-3xl";
+      contentClass += "text-lg";
     } else if (layout === 'bottom-text') {
-      containerClass += "justify-end text-center pb-24";
-      titleClass += "text-4xl";
+      containerClass += "justify-end text-center pb-32";
+      titleClass += "text-3xl";
+      contentClass += "text-lg";
     } else {
       containerClass += "justify-center text-center";
-      titleClass += isFirst ? "text-5xl" : "text-3xl";
+      titleClass += isFirst ? "text-4xl" : "text-2xl";
+      contentClass += isFirst ? "text-xl" : "text-lg";
     }
 
     return (
       <div className={containerClass}>
-        {layout === 'quote' && <div className="text-8xl absolute -top-10 -left-6 opacity-10">“</div>}
-        <h2 className={`${titleClass}`} style={{ color: titleColor || 'inherit' }}>
+        {layout === 'quote' && <div className="text-7xl absolute top-12 left-2 opacity-10">“</div>}
+        <h2 className={`${titleClass} break-words`} style={{ color: titleColor || 'inherit' }}>
           {data.title}
         </h2>
-        <div className={`leading-relaxed opacity-90 ${isFirst ? 'text-2xl font-medium' : 'text-xl'}`}>
-          {data.content.split('\n').map((line, i) => <p key={i} className="mb-2">{line}</p>)}
+        <div className={`${contentClass} break-words`}>
+          {data.content.split('\n').map((line, i) => <p key={i} className="mb-3 last:mb-0">{line}</p>)}
         </div>
       </div>
     );
@@ -170,10 +177,10 @@ const Slide: React.FC<SlideProps> = ({
         />
       )}
 
-      {/* Photo on bottom-right for all slides */}
+      {/* Photo on bottom-right - moved slightly up to avoid handle collision */}
       {profile.photoUrl && (
         <div className="absolute bottom-20 right-8 z-20">
-          <img src={profile.photoUrl} alt="Avatar" className="w-14 h-14 rounded-full border-2 border-white shadow-xl object-cover" />
+          <img src={profile.photoUrl} alt="Avatar" className="w-12 h-12 rounded-full border-2 border-white shadow-xl object-cover" />
         </div>
       )}
 
@@ -188,16 +195,16 @@ const Slide: React.FC<SlideProps> = ({
 
       {/* Next Arrow at bottom center/right */}
       {!isLast && (
-        <div className="absolute bottom-12 right-12 z-20 flex items-center gap-2 opacity-50 font-bold text-xs uppercase tracking-widest">
+        <div className="absolute bottom-12 right-12 z-20 flex items-center gap-2 opacity-50 font-bold text-[10px] uppercase tracking-widest">
           <span>Dalej</span>
-          <div className="p-2 rounded-full border border-current">
-            <ChevronRight size={14}/>
+          <div className="p-1.5 rounded-full border border-current">
+            <ChevronRight size={12}/>
           </div>
         </div>
       )}
 
-      <div className="mt-auto p-8 flex justify-between items-center border-t border-current border-opacity-10 text-[12px] font-black opacity-60 z-10 tracking-[0.2em]">
-        <span className="uppercase">{profile.handle || '@ai_creator'}</span>
+      <div className="mt-auto p-8 flex justify-between items-center border-t border-current border-opacity-10 text-[10px] font-black opacity-60 z-10 tracking-[0.2em]">
+        <span className="uppercase truncate max-w-[70%]">{profile.handle || '@ai_creator'}</span>
         <span className="px-3 py-1 rounded-full bg-current bg-opacity-10">
           {index + 1} / {total}
         </span>
