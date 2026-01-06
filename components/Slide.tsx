@@ -42,7 +42,7 @@ const Slide: React.FC<SlideProps> = ({
     switch (textEffect) {
       case 'neon': return 'effect-neon';
       case 'metallic': return 'effect-metallic';
-      case 'shadow': return 'effect-shadow';
+      case 'shadow': return 'drop-shadow-lg';
       case 'glow': return 'effect-glow';
       case 'outline': return 'effect-outline';
       case '3d': return 'effect-3d';
@@ -80,7 +80,7 @@ const Slide: React.FC<SlideProps> = ({
              {profile.logoUrl && <img src={profile.logoUrl} alt="Logo" className="h-12 object-contain mx-auto mb-4" />}
              {profile.photoUrl && <img src={profile.photoUrl} alt="Avatar" className="w-20 h-20 rounded-full border-4 border-current border-opacity-20 shadow-xl object-cover mx-auto" />}
            </div>
-           <h1 className={`text-4xl font-black mb-4 ${getEffectClass()}`} style={{ color: titleColor || 'inherit' }}>Dziękuję za przeczytanie!</h1>
+           <h2 className={`text-4xl font-black mb-4 ${getEffectClass()}`} style={{ color: titleColor || 'inherit' }}>Dziękuję za przeczytanie!</h2>
            <p className="text-xl opacity-80 mb-8 italic">Jeśli Ci się podobało, zaobserwuj po więcej.</p>
            
            {referenceLinks && referenceLinks.filter(l => l.trim()).length > 0 && (
@@ -122,9 +122,9 @@ const Slide: React.FC<SlideProps> = ({
     return (
       <div className={containerClass}>
         {layout === 'quote' && <div className="text-8xl absolute -top-10 -left-6 opacity-10">“</div>}
-        <h1 className={`${titleClass}`} style={{ color: titleColor || 'inherit' }}>
+        <h2 className={`${titleClass}`} style={{ color: titleColor || 'inherit' }}>
           {data.title}
-        </h1>
+        </h2>
         <div className={`leading-relaxed opacity-90 ${isFirst ? 'text-2xl font-medium' : 'text-xl'}`}>
           {data.content.split('\n').map((line, i) => <p key={i} className="mb-2">{line}</p>)}
         </div>
@@ -197,7 +197,7 @@ const Slide: React.FC<SlideProps> = ({
       )}
 
       <div className="mt-auto p-8 flex justify-between items-center border-t border-current border-opacity-10 text-[12px] font-black opacity-60 z-10 tracking-[0.2em]">
-        <span className="">{profile.handle || '@ai_creator'}</span>
+        <span className="uppercase">{profile.handle || '@ai_creator'}</span>
         <span className="px-3 py-1 rounded-full bg-current bg-opacity-10">
           {index + 1} / {total}
         </span>

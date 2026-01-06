@@ -53,17 +53,3 @@ export interface BackgroundSettings {
   overlayOpacity: number;
   fadingCorner: boolean;
 }
-
-export interface Project {
-  id: string;
-  name: string;
-  timestamp: number;
-  slides: SlideData[];
-  aspectRatio: AspectRatio;
-  themeId: string;
-  layout: SlideLayout;
-  textEffect: TextEffect;
-  titleColor: string;
-  profile: BrandingProfile;
-  bgSettings: BackgroundSettings;
-}
