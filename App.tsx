@@ -70,7 +70,7 @@ const App: React.FC = () => {
   const [showHistory, setShowHistory] = useState(false);
   const [savedProjects, setSavedProjects] = useState<Project[]>([]);
 
-  // Capture portal ref
+  // Portal do eksportu
   const captureSlideRef = useRef<HTMLDivElement>(null);
   const [captureIndex, setCaptureIndex] = useState(0);
 
@@ -214,14 +214,18 @@ const App: React.FC = () => {
     if (!captureSlideRef.current) return null;
     const el = captureSlideRef.current.querySelector('#capture-inner-slide') as HTMLElement;
     if (!el) return null;
-    await new Promise(resolve => setTimeout(resolve, 150));
+    
+    // Czekamy na pełne wyrenderowanie komponentu w portalu
+    await new Promise(resolve => setTimeout(resolve, 200));
+    
     // @ts-ignore
     return await window.html2canvas(el, { 
       scale: 1, 
       useCORS: true,
       backgroundColor: null,
       logging: false,
-      allowTaint: true
+      allowTaint: true,
+      imageTimeout: 5000
     });
   };
 
@@ -234,7 +238,7 @@ const App: React.FC = () => {
       if (!canvas) continue;
       
       const link = document.createElement('a');
-      link.download = `Synapse_Slajd_${i + 1}.${format === 'png' ? 'png' : 'jpg'}`;
+      link.download = `Synapse_Slide_${i + 1}.${format === 'png' ? 'png' : 'jpg'}`;
       link.href = canvas.toDataURL(`image/${format}`, format === 'jpeg' ? 0.95 : undefined);
       document.body.appendChild(link);
       link.click();
@@ -246,19 +250,27 @@ const App: React.FC = () => {
   const downloadAsPDF = async () => {
     setShowExportMenu(false);
     alert("Generowanie profesjonalnego PDF. Proszę czekać...");
+    
+    // Obliczamy proporcje dla PDF na podstawie aspect ratio
+    let pdfWidth = 1080;
+    let pdfHeight = 1350;
+    if (aspectRatio === '1:1') { pdfWidth = 1080; pdfHeight = 1080; }
+    else if (aspectRatio === '9:16') { pdfWidth = 1080; pdfHeight = 1920; }
+    else if (aspectRatio === '16:9') { pdfWidth = 1920; pdfHeight = 1080; }
+
     const pdf = new jsPDF({
-      orientation: aspectRatio === '16:9' ? 'landscape' : 'portrait',
+      orientation: pdfWidth > pdfHeight ? 'landscape' : 'portrait',
       unit: 'px',
-      format: aspectRatio === '1:1' ? [1080, 1080] : (aspectRatio === '4:5' ? [1080, 1350] : (aspectRatio === '9:16' ? [1080, 1920] : [1920, 1080]))
+      format: [pdfWidth, pdfHeight]
     });
 
     for (let i = 0; i < slides.length; i++) {
       setCaptureIndex(i);
       const canvas = await captureSingleSlide(i);
       if (!canvas) continue;
-      if (i > 0) pdf.addPage();
+      if (i > 0) pdf.addPage([pdfWidth, pdfHeight]);
       const imgData = canvas.toDataURL('image/jpeg', 0.95);
-      pdf.addImage(imgData, 'JPEG', 0, 0, pdf.internal.pageSize.getWidth(), pdf.internal.pageSize.getHeight());
+      pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
     }
     pdf.save('Synapse_Carousel.pdf');
   };
@@ -429,7 +441,7 @@ const App: React.FC = () => {
                 />
               </section>
 
-              {/* AI Sequences Section - Re-added */}
+              {/* AI Sequences Section */}
               <section className="space-y-4">
                 <div className="flex justify-between items-center">
                   <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
@@ -600,11 +612,13 @@ const App: React.FC = () => {
       </aside>
 
       {/* Main Preview Area */}
-      <main className="flex-grow bg-[#f8fafc] overflow-y-auto p-8 lg:p-16 flex flex-col items-center scroll-smooth">
-        <div className="max-w-6xl w-full flex flex-col items-center gap-16 pb-40">
-          <div className="flex flex-col xl:flex-row items-center xl:items-start gap-16 w-full justify-center">
-            <div className="relative group">
-              <div className={`transition-all duration-700 transform ${isAnimating ? 'scale-105 active-slide-glow ring-8 ring-blue-500/10 rounded-[3rem]' : 'scale-100'}`}>
+      <main className="flex-grow bg-[#f8fafc] overflow-y-auto p-4 lg:p-8 flex flex-col items-center scroll-smooth relative">
+        <div className="w-full max-w-7xl flex flex-col items-center gap-12 pb-32">
+          
+          {/* Main Slide Container with better scaling */}
+          <div className="flex flex-col xl:flex-row items-center justify-center gap-12 w-full mt-8">
+            <div className="relative flex items-center justify-center bg-slate-200 rounded-[4rem] p-10 shadow-inner overflow-hidden min-h-[500px] w-full max-w-[900px]">
+              <div className={`transition-all duration-700 transform origin-center ${isAnimating ? 'scale-[0.45] opacity-80' : 'scale-[0.4] md:scale-[0.45] lg:scale-[0.38] xl:scale-[0.42] 2xl:scale-[0.5]'}`}>
                 <Slide 
                   id="active-preview-slide"
                   data={slides[activeSlide]} 
@@ -621,54 +635,59 @@ const App: React.FC = () => {
                   bgSettings={bgSettings}
                 />
               </div>
-              <div className="absolute top-1/2 -left-16 lg:-left-20 -translate-y-1/2">
-                <button onClick={() => setActiveSlide(Math.max(0, activeSlide - 1))} className="p-5 rounded-full bg-white shadow-2xl border border-slate-100 transition-all hover:bg-blue-50 hover:text-blue-600 active:scale-90"><ChevronLeft size={32}/></button>
+              
+              {/* Navigation buttons relative to the container */}
+              <div className="absolute top-1/2 left-4 -translate-y-1/2 z-50">
+                <button onClick={() => setActiveSlide(Math.max(0, activeSlide - 1))} className="p-4 rounded-full bg-white shadow-xl border border-slate-100 transition-all hover:bg-blue-50 hover:text-blue-600 active:scale-90"><ChevronLeft size={32}/></button>
               </div>
-              <div className="absolute top-1/2 -right-16 lg:-right-20 -translate-y-1/2">
-                <button onClick={() => setActiveSlide(Math.min(slides.length - 1, activeSlide + 1))} className="p-5 rounded-full bg-white shadow-2xl border border-slate-100 transition-all hover:bg-blue-50 hover:text-blue-600 active:scale-90"><ChevronRight size={32}/></button>
+              <div className="absolute top-1/2 right-4 -translate-y-1/2 z-50">
+                <button onClick={() => setActiveSlide(Math.min(slides.length - 1, activeSlide + 1))} className="p-4 rounded-full bg-white shadow-xl border border-slate-100 transition-all hover:bg-blue-50 hover:text-blue-600 active:scale-90"><ChevronRight size={32}/></button>
               </div>
             </div>
 
+            {/* Slide Editor Panel */}
             <div className="w-full max-w-md space-y-6">
-              <div className="bg-white p-10 rounded-[3rem] shadow-2xl shadow-slate-200 border border-white space-y-8">
-                <div className="flex justify-between items-center border-b border-slate-50 pb-6">
+              <div className="bg-white p-8 rounded-[3rem] shadow-xl border border-white space-y-6">
+                <div className="flex justify-between items-center border-b border-slate-50 pb-4">
                   <div>
-                    <h3 className="text-xs font-black uppercase tracking-[0.3em] text-blue-600">Studio Editor</h3>
-                    <p className="text-[10px] font-bold text-slate-300 uppercase mt-1">Slajd {activeSlide + 1} z {slides.length}</p>
+                    <h3 className="text-xs font-black uppercase tracking-[0.2em] text-blue-600">Edytor Slajdu</h3>
+                    <p className="text-[9px] font-bold text-slate-300 uppercase mt-1">Slajd {activeSlide + 1} z {slides.length}</p>
                   </div>
-                  <div className="flex gap-2">
-                    <button onClick={() => {const ns = [...slides]; ns.splice(activeSlide + 1, 0, {title: 'Nowy Slajd', content: 'Opis...'}); setSlides(ns); setActiveSlide(activeSlide + 1);}} className="p-3 bg-slate-50 rounded-2xl text-slate-400 hover:text-blue-600 transition-all shadow-sm"><Plus size={18}/></button>
-                    <button onClick={() => {if (slides.length > 1) {const newSlides = slides.filter((_, i) => i !== activeSlide); setSlides(newSlides); setActiveSlide(Math.max(0, activeSlide - 1));}}} className="p-3 bg-rose-50 rounded-2xl text-rose-400 hover:text-rose-600 transition-all shadow-sm"><Trash2 size={18}/></button>
+                  <div className="flex gap-1.5">
+                    <button onClick={() => {const ns = [...slides]; ns.splice(activeSlide + 1, 0, {title: 'Nowy Slajd', content: 'Opis...'}); setSlides(ns); setActiveSlide(activeSlide + 1);}} className="p-2.5 bg-slate-50 rounded-xl text-slate-400 hover:text-blue-600 transition-all shadow-sm"><Plus size={16}/></button>
+                    <button onClick={() => {if (slides.length > 1) {const newSlides = slides.filter((_, i) => i !== activeSlide); setSlides(newSlides); setActiveSlide(Math.max(0, activeSlide - 1));}}} className="p-2.5 bg-rose-50 rounded-xl text-rose-400 hover:text-rose-600 transition-all shadow-sm"><Trash2 size={16}/></button>
                   </div>
                 </div>
-                <div className="space-y-6">
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase ml-1 flex items-center gap-1.5"><TypeIcon size={12}/> Tytuł Slajdu</label>
-                    <input type="text" value={slides[activeSlide]?.title || ''} onChange={(e) => {const ns = [...slides]; ns[activeSlide].title = e.target.value; setSlides(ns);}} className="w-full p-5 bg-slate-50 border border-slate-200 rounded-3xl font-bold outline-none focus:ring-4 focus:ring-blue-500/10 transition-all text-lg" />
+                <div className="space-y-4">
+                  <div className="space-y-1.5">
+                    <label className="text-[9px] font-black text-slate-400 uppercase ml-1 flex items-center gap-1.5"><TypeIcon size={12}/> Tytuł</label>
+                    <input type="text" value={slides[activeSlide]?.title || ''} onChange={(e) => {const ns = [...slides]; ns[activeSlide].title = e.target.value; setSlides(ns);}} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold outline-none focus:ring-2 focus:ring-blue-500/10 transition-all text-base" />
                   </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase ml-1 flex items-center gap-1.5"><FileText size={12}/> Treść</label>
-                    <textarea rows={6} value={slides[activeSlide]?.content || ''} onChange={(e) => {const ns = [...slides]; ns[activeSlide].content = e.target.value; setSlides(ns);}} className="w-full p-6 bg-slate-50 border border-slate-200 rounded-[2.5rem] outline-none focus:ring-4 focus:ring-blue-500/10 resize-none leading-relaxed text-sm font-bold text-slate-600 shadow-inner" />
+                  <div className="space-y-1.5">
+                    <label className="text-[9px] font-black text-slate-400 uppercase ml-1 flex items-center gap-1.5"><FileText size={12}/> Treść</label>
+                    <textarea rows={5} value={slides[activeSlide]?.content || ''} onChange={(e) => {const ns = [...slides]; ns[activeSlide].content = e.target.value; setSlides(ns);}} className="w-full p-5 bg-slate-50 border border-slate-200 rounded-[1.5rem] outline-none focus:ring-2 focus:ring-blue-500/10 resize-none leading-relaxed text-xs font-bold text-slate-600 shadow-inner" />
                   </div>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              
+              <div className="grid grid-cols-2 gap-3">
                 {FORMATS.map(f => (
-                  <button key={f.value} onClick={() => setAspectRatio(f.value)} className={`p-6 rounded-[2.5rem] border-2 transition-all text-left flex flex-col h-full justify-center ${aspectRatio === f.value ? 'border-blue-500 bg-white shadow-xl' : 'border-transparent bg-white/50 opacity-60 grayscale hover:opacity-100 hover:grayscale-0'}`}>
-                    <div className="text-[10px] font-black text-slate-900 uppercase leading-tight">{f.label}</div>
-                    <div className="text-[8px] font-bold text-slate-400 mt-2 uppercase tracking-widest">{f.desc}</div>
+                  <button key={f.value} onClick={() => setAspectRatio(f.value)} className={`p-4 rounded-[2rem] border-2 transition-all text-left flex flex-col h-full justify-center ${aspectRatio === f.value ? 'border-blue-500 bg-white shadow-lg' : 'border-transparent bg-white/50 opacity-60 grayscale hover:opacity-100 hover:grayscale-0'}`}>
+                    <div className="text-[9px] font-black text-slate-900 uppercase leading-tight">{f.label}</div>
+                    <div className="text-[7px] font-bold text-slate-400 mt-1 uppercase tracking-widest">{f.desc}</div>
                   </button>
                 ))}
               </div>
             </div>
           </div>
 
-          {/* Grid Preview */}
-          <div className="w-full pt-32 border-t border-slate-200">
-            <div className="flex flex-wrap justify-center gap-16 lg:gap-24 items-start px-8">
+          {/* Grid Preview - Smallest thumbnails that fit the screen width */}
+          <div className="w-full pt-16 border-t border-slate-200 overflow-hidden">
+            <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.4em] mb-12 text-center">Szybki Przegląd Całości</h4>
+            <div className="flex flex-wrap justify-center gap-12 lg:gap-16 items-start px-8">
               {slides.map((s, i) => (
-                <div key={i} className={`relative transition-all duration-700 cursor-pointer ${activeSlide === i ? 'scale-110 active-slide-glow ring-8 ring-blue-500/10 rounded-[3rem]' : 'opacity-40 hover:opacity-100 grayscale-[40%] hover:scale-105'}`} onClick={() => setActiveSlide(i)}>
-                  <div className="scale-[0.35] lg:scale-[0.45] origin-top -mb-[55%] lg:-mb-[60%]">
+                <div key={i} className={`relative transition-all duration-700 cursor-pointer ${activeSlide === i ? 'scale-110 ring-4 ring-blue-500/20 rounded-[2rem]' : 'opacity-40 hover:opacity-100 grayscale-[40%] hover:scale-105'}`} onClick={() => setActiveSlide(i)}>
+                  <div className="scale-[0.12] lg:scale-[0.15] origin-top -mb-[105px] lg:-mb-[120px]">
                     <Slide 
                       id={`grid-preview-${i}`}
                       data={s} 
@@ -685,7 +704,7 @@ const App: React.FC = () => {
                       bgSettings={bgSettings}
                     />
                   </div>
-                  <div className={`absolute -bottom-8 left-1/2 -translate-x-1/2 text-[10px] font-black uppercase transition-colors ${activeSlide === i ? 'text-blue-600' : 'text-slate-300'}`}>Slajd {i+1}</div>
+                  <div className={`absolute -bottom-6 left-1/2 -translate-x-1/2 text-[9px] font-black uppercase transition-colors ${activeSlide === i ? 'text-blue-600' : 'text-slate-300'}`}>Slajd {i+1}</div>
                 </div>
               ))}
             </div>
