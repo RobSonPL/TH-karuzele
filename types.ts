@@ -3,10 +3,11 @@ export interface SlideData {
   title: string;
   content: string;
   imageUrl?: string;
+  iconUrl?: string; // Nowe pole na wygenerowaną ikonę AI
 }
 
 export type AspectRatio = '1:1' | '4:5' | '9:16' | '16:9';
-export type SlideLayout = 'centered' | 'top-text' | 'bottom-text' | 'side-by-side' | 'minimal' | 'quote' | 'impact';
+export type SlideLayout = 'centered' | 'top-text' | 'bottom-text' | 'side-by-side' | 'minimal' | 'quote' | 'impact' | 'split-screen' | 'full-bleed' | 'icon-heavy' | 'timeline' | 'big-header';
 export type TextEffect = 'none' | 'neon' | 'metallic' | 'shadow' | 'glow' | 'outline' | '3d' | 'glitch' | 'fire' | 'water' | 'pixel' | 'glass' | 'floating' | 'gradient';
 
 export interface CarouselTheme {
@@ -60,6 +61,7 @@ export interface Project {
   timestamp: number;
   slides: SlideData[];
   theme: CarouselTheme;
+  fontFamily: string;
   aspectRatio: AspectRatio;
   slideLayout: SlideLayout;
   textEffect: TextEffect;
@@ -71,4 +73,6 @@ export interface Project {
   activeProfileType: 'personal' | 'company';
   personalProfile: BrandingProfile;
   companyProfile: BrandingProfile;
+  titleSize?: number; // Rozmiar czcionki tytułu
+  bodySize?: number;  // Rozmiar czcionki treści
 }

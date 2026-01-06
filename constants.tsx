@@ -46,8 +46,16 @@ export const FORMATS: { label: string; value: AspectRatio; desc: string }[] = [
 ];
 
 export const LAYOUTS: { label: string; value: SlideLayout }[] = [
-  { label: 'Centrum', value: 'centered' }, { label: 'Góra', value: 'top-text' }, { label: 'Dół', value: 'bottom-text' },
-  { label: 'Cytat', value: 'quote' }, { label: 'Impact', value: 'impact' }, { label: 'Podział', value: 'side-by-side' }
+  { label: 'Centrum', value: 'centered' }, 
+  { label: 'Góra', value: 'top-text' }, 
+  { label: 'Dół', value: 'bottom-text' },
+  { label: 'Cytat', value: 'quote' }, 
+  { label: 'Impact', value: 'impact' }, 
+  { label: 'Podział Pionowy', value: 'split-screen' },
+  { label: 'Full Bleed', value: 'full-bleed' },
+  { label: 'Ikona i Tekst', value: 'icon-heavy' },
+  { label: 'Oś Czasu', value: 'timeline' },
+  { label: 'Wielki Nagłówek', value: 'big-header' }
 ];
 
 export const BACKGROUNDS = [

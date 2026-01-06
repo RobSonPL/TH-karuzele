@@ -5,16 +5,14 @@ import {
   Type as TypeIcon, RefreshCw, Plus, Trash2, Share2, Save, Copy, Twitter, Linkedin, X,
   Upload, FileText, Monitor, Layout, Link as LinkIcon, Image as ImageIcon, CheckCircle2,
   Wand2, Layers, AlignLeft, Type, Check, Eye, FileDown, ListChecks, Hash, Clock, FolderOpen,
-  MessageSquare
+  MessageSquare, Pipette, Scissors, Film, Play, Loader2, Import, FileSearch, FileBox
 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import { SlideData, CarouselTheme, GenerationSettings, Tone, AspectRatio, GroundingSource, BrandingProfile, SlideLayout, TextEffect, BackgroundSettings, Project } from './types';
 import { THEMES, TONES, FORMATS, LAYOUTS, BACKGROUNDS, FONTS, PATTERNS } from './constants';
 import Slide from './components/Slide';
-import { generateCarouselContent, generateKeySequences } from './services/gemini';
+import { generateCarouselContent, generateKeySequences, convertTextToSlides, convertFileToSlides } from './services/gemini';
 import { GoogleGenAI, Type as GenType } from "@google/genai";
-
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 const App: React.FC = () => {
   const defaultPhoto = "https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=1000&auto=format&fit=crop"; 
@@ -42,14 +40,18 @@ const App: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [seqLoading, setSeqLoading] = useState(false);
+  const [iconGenerating, setIconGenerating] = useState(false);
   const [structurePreview, setStructurePreview] = useState<string[]>([]);
   
   const [currentTheme, setCurrentTheme] = useState<CarouselTheme>(THEMES[0]);
+  const [fontFamily, setFontFamily] = useState<string>(THEMES[0].fontFamily);
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>('4:5');
   const [slideLayout, setSlideLayout] = useState<SlideLayout>('centered');
   const [textEffect, setTextEffect] = useState<TextEffect>('none');
   const [overlayImageUrl, setOverlayImageUrl] = useState<string>('');
   const [titleColor, setTitleColor] = useState<string>('');
+  const [titleSize, setTitleSize] = useState<number>(70);
+  const [bodySize, setBodySize] = useState<number>(35);
   
   const [bgSettings, setBgSettings] = useState<BackgroundSettings>({
     patternId: 'none',
@@ -68,9 +70,10 @@ const App: React.FC = () => {
   const [isAnimating, setIsAnimating] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importText, setImportText] = useState('');
   const [savedProjects, setSavedProjects] = useState<Project[]>([]);
 
-  // Portal do eksportu
   const captureSlideRef = useRef<HTMLDivElement>(null);
   const [captureIndex, setCaptureIndex] = useState(0);
 
@@ -91,6 +94,17 @@ const App: React.FC = () => {
     }
   }, []);
 
+  const handleAiError = async (error: any) => {
+    console.error("AI Error:", error);
+    if (error.message?.includes("Requested entity was not found") || error.message === "ENTITY_NOT_FOUND") {
+      alert("Wybrany model wymaga aktywnego, płatnego klucza API. Wybierz klucz ponownie.");
+      // @ts-ignore
+      await window.aistudio.openSelectKey();
+      return true;
+    }
+    return false;
+  };
+
   const saveProject = () => {
     const newProject: Project = {
       id: crypto.randomUUID(),
@@ -98,11 +112,14 @@ const App: React.FC = () => {
       timestamp: Date.now(),
       slides,
       theme: currentTheme,
+      fontFamily,
       aspectRatio,
       slideLayout,
       textEffect,
       overlayImageUrl,
       titleColor,
+      titleSize,
+      bodySize,
       bgSettings,
       clnLinks,
       keyMessages,
@@ -120,11 +137,14 @@ const App: React.FC = () => {
   const loadProject = (project: Project) => {
     setSlides(project.slides);
     setCurrentTheme(project.theme);
+    setFontFamily(project.fontFamily || project.theme.fontFamily);
     setAspectRatio(project.aspectRatio);
     setSlideLayout(project.slideLayout);
     setTextEffect(project.textEffect);
     setOverlayImageUrl(project.overlayImageUrl);
     setTitleColor(project.titleColor);
+    setTitleSize(project.titleSize || 70);
+    setBodySize(project.bodySize || 35);
     setBgSettings(project.bgSettings);
     setClnLinks(project.clnLinks);
     setKeyMessages(project.keyMessages || ['', '', '']);
@@ -134,6 +154,91 @@ const App: React.FC = () => {
     setTopic(project.name !== "Projekt " + new Date(project.timestamp).toLocaleDateString() ? project.name : '');
     setActiveSlide(0);
     setShowHistory(false);
+  };
+
+  const handleFileImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setLoading(true);
+    setShowImportModal(false);
+    
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const base64 = event.target?.result as string;
+        const result = await convertFileToSlides(base64, file.type, slideCount);
+        
+        if (result.length > 0) {
+          setSlides(result);
+          setActiveSlide(0);
+          alert(`Pomyślnie zaimportowano i przetworzono plik: ${file.name}`);
+        } else {
+          alert("AI nie mogło wyodrębnić slajdów z tego pliku. Spróbuj innego dokumentu.");
+        }
+      } catch (err: any) {
+        const handled = await handleAiError(err);
+        if (!handled) alert("Błąd podczas przetwarzania pliku przez AI.");
+      } finally {
+        setLoading(false);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleAiTextImport = async () => {
+    if (!importText.trim()) return alert("Wpisz tekst do przetworzenia!");
+    setLoading(true);
+    setShowImportModal(false);
+    try {
+      const result = await convertTextToSlides(importText, slideCount);
+      if (result.length > 0) {
+        setSlides(result);
+        setActiveSlide(0);
+        alert("AI pomyślnie przetworzyło tekst na slajdy!");
+      } else {
+        alert("AI nie mogło wygenerować slajdów z tego tekstu.");
+      }
+    } catch (err: any) {
+      const handled = await handleAiError(err);
+      if (!handled) alert("Błąd podczas przetwarzania tekstu przez AI.");
+    } finally {
+      setLoading(false);
+      setImportText('');
+    }
+  };
+
+  const generateIconsAI = async () => {
+    if (slides.length === 0) return;
+    setIconGenerating(true);
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const updatedSlides = [...slides];
+      for (let i = 0; i < updatedSlides.length; i++) {
+        const slide = updatedSlides[i];
+        const iconPrompt = `Minimalistyczna, nowoczesna ikona liniowa (piktogram) dla tematu: "${slide.title}". Styl wektorowy, biały kolor, przezroczyste tło, wysoki kontrast, profesjonalny design technologiczny.`;
+        
+        const response = await ai.models.generateContent({
+          model: 'gemini-2.5-flash-image',
+          contents: { parts: [{ text: iconPrompt }] },
+          config: { imageConfig: { aspectRatio: "1:1" } }
+        });
+
+        for (const part of response.candidates[0].content.parts) {
+          if (part.inlineData) {
+            updatedSlides[i] = { ...slide, iconUrl: `data:image/png;base64,${part.inlineData.data}` };
+            break;
+          }
+        }
+        await new Promise(r => setTimeout(r, 1000));
+      }
+      setSlides(updatedSlides);
+    } catch (e: any) {
+      const handled = await handleAiError(e);
+      if (!handled) alert("Błąd podczas generowania ikon AI.");
+    } finally {
+      setIconGenerating(false);
+    }
   };
 
   const deleteProject = (id: string) => {
@@ -146,6 +251,7 @@ const App: React.FC = () => {
     if (!topic) return alert("Wpisz temat!");
     setPreviewLoading(true);
     try {
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
         contents: `Dla tematu: "${topic}", wypisz krótko plan ${slideCount} slajdów do karuzeli w języku polskim. Tylko tytuły slajdów w formie listy JSON.`,
@@ -158,8 +264,9 @@ const App: React.FC = () => {
         }
       });
       setStructurePreview(JSON.parse(response.text || "[]"));
-    } catch (e) {
-      console.error(e);
+    } catch (e: any) {
+      const handled = await handleAiError(e);
+      if (!handled) console.error(e);
     } finally {
       setPreviewLoading(false);
     }
@@ -171,8 +278,9 @@ const App: React.FC = () => {
     try {
       const res = await generateKeySequences(topic);
       setKeyMessages(res);
-    } catch (e) {
-      alert("Błąd generatora sekwencji.");
+    } catch (e: any) {
+      const handled = await handleAiError(e);
+      if (!handled) alert("Błąd generatora sekwencji.");
     } finally {
       setSeqLoading(false);
     }
@@ -203,8 +311,9 @@ const App: React.FC = () => {
       setSlides(result);
       setActiveSlide(0);
       setStructurePreview([]);
-    } catch (error) {
-      alert("Błąd generowania.");
+    } catch (error: any) {
+      const handled = await handleAiError(error);
+      if (!handled) alert("Błąd generowania.");
     } finally {
       setLoading(false);
     }
@@ -214,10 +323,7 @@ const App: React.FC = () => {
     if (!captureSlideRef.current) return null;
     const el = captureSlideRef.current.querySelector('#capture-inner-slide') as HTMLElement;
     if (!el) return null;
-    
-    // Czekamy na pełne wyrenderowanie komponentu w portalu
     await new Promise(resolve => setTimeout(resolve, 200));
-    
     // @ts-ignore
     return await window.html2canvas(el, { 
       scale: 1, 
@@ -250,8 +356,6 @@ const App: React.FC = () => {
   const downloadAsPDF = async () => {
     setShowExportMenu(false);
     alert("Generowanie profesjonalnego PDF. Proszę czekać...");
-    
-    // Obliczamy proporcje dla PDF na podstawie aspect ratio
     let pdfWidth = 1080;
     let pdfHeight = 1350;
     if (aspectRatio === '1:1') { pdfWidth = 1080; pdfHeight = 1080; }
@@ -278,14 +382,88 @@ const App: React.FC = () => {
   const currentProfile = activeProfileType === 'personal' ? personalProfile : companyProfile;
 
   return (
-    <div className="min-h-screen flex flex-col lg:flex-row bg-[#f1f5f9] text-slate-900 overflow-hidden font-sans">
+    <div className="min-h-screen flex flex-col lg:flex-row bg-[#f1f5f9] text-slate-900 font-sans h-screen overflow-hidden">
       
-      {/* Hidden Portal for High-Resolution Capture */}
+      {/* Import Modal */}
+      {showImportModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/90 backdrop-blur-md p-4 animate-in fade-in duration-300">
+          <div className="bg-white w-full max-w-2xl rounded-[3rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 border-8 border-slate-50">
+            <div className="p-10 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+              <div className="flex items-center gap-4">
+                <div className="p-3 bg-blue-600 text-white rounded-2xl shadow-xl shadow-blue-500/20">
+                  <FileBox size={28} />
+                </div>
+                <div>
+                  <h3 className="text-2xl font-black text-slate-900">Import Multimodalny</h3>
+                  <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-0.5">Wizja AI: JPG, PNG, PDF</p>
+                </div>
+              </div>
+              <button onClick={() => setShowImportModal(false)} className="p-3 bg-white border border-slate-100 hover:bg-rose-50 rounded-full transition-all text-slate-400 hover:text-rose-500 shadow-sm">
+                <X size={24} />
+              </button>
+            </div>
+            
+            <div className="p-10 space-y-10">
+              <div className="space-y-5">
+                <label className="text-[11px] font-black text-slate-400 uppercase tracking-[0.3em] flex items-center gap-2">
+                  <FileSearch size={16} className="text-blue-500"/> Inteligentna analiza pliku
+                </label>
+                <div className="relative group">
+                  <input 
+                    type="file" 
+                    accept="image/jpeg,image/png,application/pdf" 
+                    onChange={handleFileImport}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                  />
+                  <div className="p-12 border-4 border-dashed border-slate-100 rounded-[3rem] text-center group-hover:border-blue-400 group-hover:bg-blue-50/50 transition-all bg-slate-50/30">
+                    <div className="w-20 h-20 bg-white rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-xl group-hover:scale-110 transition-transform">
+                      <Upload size={32} className="text-blue-500" />
+                    </div>
+                    <p className="text-lg font-black text-slate-900 group-hover:text-blue-600">Upuść dokument lub obraz</p>
+                    <p className="text-xs font-bold text-slate-400 mt-2 uppercase tracking-widest">Obsługiwane: JPG, PNG, PDF</p>
+                    <div className="mt-8 flex justify-center gap-2">
+                      <span className="px-3 py-1 bg-white border border-slate-100 rounded-lg text-[10px] font-black text-slate-400">OCR + ANALIZA</span>
+                      <span className="px-3 py-1 bg-white border border-slate-100 rounded-lg text-[10px] font-black text-slate-400">EKSTRAKCJA TEZ</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="relative flex items-center py-4">
+                <div className="flex-grow border-t-2 border-slate-100"></div>
+                <span className="flex-shrink mx-6 text-[11px] font-black text-slate-300 uppercase tracking-[0.5em]">LUB</span>
+                <div className="flex-grow border-t-2 border-slate-100"></div>
+              </div>
+
+              <div className="space-y-5">
+                <label className="text-[11px] font-black text-slate-400 uppercase tracking-[0.3em] flex items-center gap-2">
+                  <Wand2 size={16} className="text-blue-500"/> Surowy tekst na slajdy
+                </label>
+                <textarea 
+                  value={importText}
+                  onChange={(e) => setImportText(e.target.value)}
+                  placeholder="Wklej treść posta, notatki lub fragment artykułu..."
+                  className="w-full p-6 bg-slate-50 border-2 border-slate-100 rounded-[2rem] text-sm focus:ring-8 focus:ring-blue-500/5 focus:border-blue-400 outline-none transition-all resize-none shadow-inner h-40 font-medium"
+                />
+                <button 
+                  onClick={handleAiTextImport}
+                  className="w-full p-5 bg-slate-900 text-white rounded-[2rem] font-black text-sm hover:bg-black transition-all shadow-2xl flex items-center justify-center gap-3 active:scale-[0.98]"
+                >
+                  <Sparkles size={20} className="text-blue-400" /> GENERUJ STRUKTURĘ Z TEKSTU
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Hidden Portal for Capture */}
       <div ref={captureSlideRef} className="fixed top-0 left-[-9999px] z-[-1] pointer-events-none opacity-0">
         <Slide 
           id="capture-inner-slide"
           data={slides[captureIndex] || slides[0]} 
           theme={currentTheme}
+          fontOverride={fontFamily}
           index={captureIndex}
           total={slides.length}
           profile={currentProfile}
@@ -295,15 +473,17 @@ const App: React.FC = () => {
           textEffect={textEffect}
           referenceLinks={clnLinks}
           titleColor={titleColor}
+          titleSize={titleSize}
+          bodySize={bodySize}
           bgSettings={bgSettings}
         />
       </div>
 
       {/* Sidebar */}
-      <aside className="w-full lg:w-[420px] bg-white border-r border-slate-200 flex flex-col overflow-y-auto max-h-screen shadow-2xl z-30">
+      <aside className="w-full lg:w-[420px] bg-white border-r border-slate-200 flex flex-col h-full shadow-2xl z-30 overflow-y-auto scrollbar-hide">
         <div className="p-8 border-b border-slate-100 bg-gradient-to-br from-white to-slate-50 sticky top-0 z-40">
           <div className="flex items-center gap-4 mb-6">
-            <div className="p-3 bg-blue-600 rounded-2xl shadow-xl shadow-blue-500/30 text-white animate-pulse">
+            <div className="p-3 bg-blue-600 rounded-2xl shadow-xl shadow-blue-500/30 text-white">
               <Sparkles size={28} />
             </div>
             <div>
@@ -318,46 +498,27 @@ const App: React.FC = () => {
           </div>
 
           <div className="flex gap-2">
-            <button 
-              onClick={saveProject}
-              className="flex-1 py-3 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-black transition-all shadow-md"
-            >
-              <Save size={14}/> Zapisz
-            </button>
-            <button 
-              onClick={() => setShowHistory(!showHistory)}
-              className="flex-1 py-3 bg-white border border-slate-200 text-slate-900 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-slate-50 transition-all shadow-sm"
-            >
-              <Clock size={14}/> {showHistory ? 'Powrót' : 'Historia'}
-            </button>
+            <button onClick={saveProject} className="flex-1 py-3 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-black transition-all shadow-md"><Save size={14}/> Zapisz</button>
+            <div className="flex flex-1 gap-1">
+              <button onClick={() => setShowHistory(!showHistory)} className="flex-1 py-3 bg-white border border-slate-200 text-slate-900 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-slate-50 transition-all shadow-sm"><Clock size={14}/> {showHistory ? 'Powrót' : 'H'} </button>
+              <button onClick={() => setShowImportModal(true)} className="flex-1 py-3 bg-blue-50 text-blue-600 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-blue-100 transition-all shadow-sm border border-blue-100"><Import size={14}/> IMP</button>
+            </div>
           </div>
         </div>
 
         <div className="p-8 space-y-8 pb-32">
           {showHistory ? (
             <div className="space-y-4 animate-in fade-in slide-in-from-right-4 duration-300">
-              <h3 className="text-[11px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                <FolderOpen size={14}/> Zapisane Projekty
-              </h3>
-              {savedProjects.length === 0 ? (
-                <div className="text-center py-12 text-slate-400 italic text-sm">Brak zapisanych projektów</div>
-              ) : (
+              <h3 className="text-[11px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><FolderOpen size={14}/> Zapisane Projekty</h3>
+              {savedProjects.length === 0 ? <div className="text-center py-12 text-slate-400 italic text-sm">Brak zapisanych projektów</div> : (
                 <div className="space-y-3">
                   {savedProjects.map(p => (
                     <div key={p.id} className="group relative">
-                      <button 
-                        onClick={() => loadProject(p)}
-                        className="w-full p-5 bg-slate-50 border border-slate-200 rounded-2xl text-left hover:border-blue-500 hover:bg-blue-50/50 transition-all shadow-sm"
-                      >
+                      <button onClick={() => loadProject(p)} className="w-full p-5 bg-slate-50 border border-slate-200 rounded-2xl text-left hover:border-blue-500 hover:bg-blue-50/50 transition-all shadow-sm">
                         <div className="font-black text-xs text-slate-900 truncate pr-8">{p.name}</div>
                         <div className="text-[9px] font-bold text-slate-400 mt-1">{new Date(p.timestamp).toLocaleString()}</div>
                       </button>
-                      <button 
-                        onClick={() => deleteProject(p.id)}
-                        className="absolute right-4 top-1/2 -translate-y-1/2 p-2 text-rose-400 opacity-0 group-hover:opacity-100 hover:bg-rose-100 rounded-lg transition-all"
-                      >
-                        <Trash2 size={16}/>
-                      </button>
+                      <button onClick={() => deleteProject(p.id)} className="absolute right-4 top-1/2 -translate-y-1/2 p-2 text-rose-400 opacity-0 group-hover:opacity-100 hover:bg-rose-100 rounded-lg transition-all"><Trash2 size={16}/></button>
                     </div>
                   ))}
                 </div>
@@ -365,189 +526,87 @@ const App: React.FC = () => {
             </div>
           ) : (
             <>
-              {/* Main Topic Section */}
               <section className="space-y-4">
                 <div className="flex justify-between items-center">
-                  <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                    <AlignLeft size={14}/> Temat Główny
-                  </label>
-                  <button 
-                    onClick={generateQuickStructure} 
-                    disabled={previewLoading || !topic}
-                    className="text-[10px] font-black text-blue-500 hover:text-blue-700 disabled:opacity-30 flex items-center gap-1"
-                  >
+                  <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><AlignLeft size={14}/> Temat Główny</label>
+                  <button onClick={generateQuickStructure} disabled={previewLoading || !topic} className="text-[10px] font-black text-blue-500 hover:text-blue-700 disabled:opacity-30 flex items-center gap-1">
                     {previewLoading ? <RefreshCw size={10} className="animate-spin"/> : <Eye size={10}/>} Podejrzyj strukturę
                   </button>
                 </div>
-                
-                <div className="flex flex-col gap-3">
-                  <textarea 
-                    placeholder="Wpisz temat, np. 'Strategia AI dla małych firm'" 
-                    className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm focus:ring-4 focus:ring-blue-500/10 focus:border-blue-400 outline-none transition-all resize-none shadow-sm font-medium"
-                    rows={2}
-                    value={topic}
-                    onChange={(e) => setTopic(e.target.value)}
-                  />
-                  
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 flex items-center gap-2">
-                      <MessageSquare size={12}/> Ton wypowiedzi
-                    </label>
-                    <select 
-                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-blue-400 transition-all shadow-sm"
-                      value={tone}
-                      onChange={(e) => setTone(e.target.value as Tone)}
-                    >
-                      {TONES.map(t => <option key={t} value={t}>{t}</option>)}
-                    </select>
-                  </div>
+                <textarea placeholder="Wpisz temat, np. 'Strategia AI dla małych firm'" className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm focus:ring-4 focus:ring-blue-500/10 focus:border-blue-400 outline-none transition-all resize-none shadow-sm font-medium" rows={2} value={topic} onChange={(e) => setTopic(e.target.value)} />
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 flex items-center gap-2"><MessageSquare size={12}/> Ton wypowiedzi</label>
+                  <select className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-blue-400 transition-all shadow-sm" value={tone} onChange={(e) => setTone(e.target.value as Tone)}>
+                    {TONES.map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
                 </div>
-
-                {(structurePreview.length > 0 || previewLoading) && (
-                  <div className="p-5 bg-blue-50/50 border border-blue-100 rounded-[2rem] animate-in fade-in slide-in-from-top-2 duration-300">
-                    <h4 className="text-[10px] font-black text-blue-600 uppercase tracking-widest mb-3 flex items-center gap-2">
-                      <ListChecks size={14}/> Planowana Struktura
-                    </h4>
-                    <div className="space-y-2">
-                      {previewLoading ? (
-                        <div className="space-y-2 py-2">
-                          <div className="h-3 bg-blue-100 rounded-full w-full animate-pulse"></div>
-                          <div className="h-3 bg-blue-100 rounded-full w-3/4 animate-pulse"></div>
-                        </div>
-                      ) : (
-                        structurePreview.map((title, i) => (
-                          <div key={i} className="text-[11px] font-bold text-slate-600 flex gap-2">
-                            <span className="text-blue-300">{i+1}.</span> {title}
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  </div>
-                )}
               </section>
 
               <section className="space-y-4">
                 <div className="flex justify-between items-center">
-                  <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                    <Hash size={14}/> Liczba Slajdów (4-10)
-                  </label>
+                  <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><Hash size={14}/> Liczba Slajdów (4-10)</label>
                   <span className="text-sm font-black text-blue-600 bg-blue-50 px-3 py-1 rounded-full">{slideCount}</span>
                 </div>
-                <input 
-                  type="range" min="4" max="10" step="1" 
-                  value={slideCount} 
-                  onChange={(e) => setSlideCount(parseInt(e.target.value))}
-                  className="w-full h-1.5 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-blue-600 shadow-inner"
-                />
+                <input type="range" min="4" max="10" step="1" value={slideCount} onChange={(e) => setSlideCount(parseInt(e.target.value))} className="w-full h-1.5 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-blue-600 shadow-inner" />
               </section>
 
-              {/* AI Sequences Section */}
               <section className="space-y-4">
                 <div className="flex justify-between items-center">
-                  <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                    <Wand2 size={14} className="text-blue-600"/> Sekwencja Hook/CTA
-                  </label>
-                  <button 
-                    onClick={handleGenerateSequences} 
-                    disabled={seqLoading || !topic} 
-                    className="text-[10px] font-black text-blue-600 flex items-center gap-1 hover:underline disabled:opacity-30 transition-all"
-                  >
+                  <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><Wand2 size={14} className="text-blue-600"/> Sekwencja Hook/CTA</label>
+                  <button onClick={handleGenerateSequences} disabled={seqLoading || !topic} className="text-[10px] font-black text-blue-600 flex items-center gap-1 hover:underline disabled:opacity-30 transition-all">
                     {seqLoading ? <RefreshCw size={12} className="animate-spin"/> : <Sparkles size={12}/>} AI GENERUJ
                   </button>
                 </div>
                 <div className="space-y-2">
-                  <input 
-                    type="text" placeholder="Hook (Zaczepka)..." 
-                    className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none focus:border-blue-300 focus:bg-white transition-all shadow-sm font-medium" 
-                    value={keyMessages[0]} 
-                    onChange={(e) => {const nm = [...keyMessages]; nm[0] = e.target.value; setKeyMessages(nm);}} 
-                  />
-                  <input 
-                    type="text" placeholder="Główna wartość / Przesłanie..." 
-                    className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none focus:border-blue-300 focus:bg-white transition-all shadow-sm font-medium" 
-                    value={keyMessages[1]} 
-                    onChange={(e) => {const nm = [...keyMessages]; nm[1] = e.target.value; setKeyMessages(nm);}} 
-                  />
-                  <input 
-                    type="text" placeholder="CTA (Wezwanie do działania)..." 
-                    className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none focus:border-blue-300 focus:bg-white transition-all shadow-sm font-medium" 
-                    value={keyMessages[2]} 
-                    onChange={(e) => {const nm = [...keyMessages]; nm[2] = e.target.value; setKeyMessages(nm);}} 
-                  />
+                  <input type="text" placeholder="Hook (Zaczepka)..." className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none focus:border-blue-300 focus:bg-white transition-all shadow-sm font-medium" value={keyMessages[0]} onChange={(e) => {const nm = [...keyMessages]; nm[0] = e.target.value; setKeyMessages(nm);}} />
+                  <input type="text" placeholder="Główna wartość / Przesłanie..." className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none focus:border-blue-300 focus:bg-white transition-all shadow-sm font-medium" value={keyMessages[1]} onChange={(e) => {const nm = [...keyMessages]; nm[1] = e.target.value; setKeyMessages(nm);}} />
+                  <input type="text" placeholder="CTA (Wezwanie do działania)..." className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none focus:border-blue-300 focus:bg-white transition-all shadow-sm font-medium" value={keyMessages[2]} onChange={(e) => {const nm = [...keyMessages]; nm[2] = e.target.value; setKeyMessages(nm);}} />
                 </div>
               </section>
 
               <section className="space-y-6 p-6 bg-slate-50/50 border border-slate-100 rounded-[2.5rem] shadow-sm">
-                <h3 className="text-lg font-black tracking-tight text-slate-900 flex items-center gap-2">
-                  <Settings2 size={18} className="text-blue-600" /> Ustawienia Tła
-                </h3>
+                <h3 className="text-lg font-black tracking-tight text-slate-900 flex items-center gap-2"><Settings2 size={18} className="text-blue-600" /> Styl Wizualny</h3>
                 <div className="space-y-6">
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-center"><label className="text-[10px] font-black text-slate-400 uppercase ml-1 flex items-center gap-2"><TypeIcon size={12}/> Rozmiar Nagłówka</label><span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">{titleSize}px</span></div>
+                      <input type="range" min="40" max="150" step="1" value={titleSize} onChange={(e) => setTitleSize(parseInt(e.target.value))} className="w-full h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600" />
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-center"><label className="text-[10px] font-black text-slate-400 uppercase ml-1 flex items-center gap-2"><FileText size={12}/> Rozmiar Tekstu</label><span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">{bodySize}px</span></div>
+                      <input type="range" min="20" max="80" step="1" value={bodySize} onChange={(e) => setBodySize(parseInt(e.target.value))} className="w-full h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600" />
+                    </div>
+                  </div>
+                  <div className="space-y-3">
+                    <label className="text-[10px] font-black text-slate-400 uppercase ml-1 flex items-center gap-2"><Pipette size={14}/> Kolor Tytułu</label>
+                    <div className="flex items-center gap-4 p-2 bg-white rounded-2xl border border-slate-100">
+                      <input type="color" value={titleColor || '#000000'} onChange={(e) => setTitleColor(e.target.value)} className="w-10 h-10 rounded-lg cursor-pointer border-0 bg-transparent" />
+                      <input type="text" value={titleColor} onChange={(e) => setTitleColor(e.target.value)} placeholder="#HEX" className="flex-grow text-xs font-bold font-mono outline-none uppercase" />
+                      <button onClick={() => setTitleColor('')} className="text-[9px] font-black text-slate-400 hover:text-rose-500 uppercase px-2">Reset</button>
+                    </div>
+                  </div>
+                  <div className="space-y-3">
+                    <label className="text-[10px] font-black text-slate-400 uppercase ml-1 flex items-center gap-2"><Type size={14}/> Typografia (30+ fontów)</label>
+                    <div className="grid grid-cols-2 gap-2 max-h-[200px] overflow-y-auto p-1 scrollbar-thin rounded-xl">
+                      {FONTS.map(font => <button key={font.name} onClick={() => setFontFamily(font.class)} className={`p-3 text-left rounded-xl border-2 transition-all ${fontFamily === font.class ? 'border-blue-500 bg-blue-50 shadow-sm' : 'border-slate-100 bg-white hover:border-slate-200'}`}><div className={`text-[11px] truncate ${font.class}`}>{font.name}</div></button>)}
+                    </div>
+                  </div>
                   <div className="space-y-3">
                     <label className="text-[10px] font-black text-slate-400 uppercase ml-1 flex items-center gap-2">Obrazy Tła</label>
                     <div className="grid grid-cols-5 gap-1.5 max-h-[140px] overflow-y-auto p-1 scrollbar-thin rounded-xl">
-                      {BACKGROUNDS.map(bg => (
-                        <button 
-                          key={bg.id} 
-                          onClick={() => setOverlayImageUrl(bg.url)} 
-                          className={`aspect-square rounded-lg border-2 transition-all overflow-hidden ${overlayImageUrl === bg.url ? 'border-blue-500 scale-105 z-10 shadow-lg' : 'border-slate-100 opacity-60 hover:opacity-100'}`}
-                        >
-                          <div className="w-full h-full bg-cover bg-center" style={{ backgroundImage: bg.url ? `url(${bg.url})` : 'none', backgroundColor: bg.url ? 'transparent' : '#eee' }} />
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="space-y-3">
-                    <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Nakładki & Wzory</label>
-                    <div className="flex items-center justify-between p-1">
-                      <div className="flex gap-2">
-                        {['white', 'black', 'grey', 'none'].map((color) => (
-                          <button 
-                            key={color}
-                            onClick={() => setBgSettings({...bgSettings, overlayColor: color as any})} 
-                            className={`w-7 h-7 rounded-full border-2 transition-all flex items-center justify-center ${bgSettings.overlayColor === color ? 'border-blue-500 scale-125 shadow-md z-10' : 'border-slate-200 hover:border-slate-300'}`} 
-                            style={{ backgroundColor: color === 'none' ? 'transparent' : color === 'grey' ? '#808080' : color === 'white' ? '#fff' : '#000' }}
-                          >
-                            {color === 'none' && <X size={12} className="text-slate-400"/>}
-                          </button>
-                        ))}
-                      </div>
-                      <button 
-                        onClick={() => setBgSettings({...bgSettings, fadingCorner: !bgSettings.fadingCorner})}
-                        className="flex items-center gap-2 text-[10px] font-bold text-slate-600 hover:text-blue-600 transition-colors bg-white px-3 py-1.5 rounded-full border border-slate-100 shadow-sm"
-                      >
-                        <span>Fading Corner</span>
-                        <div className={`w-4 h-4 rounded-md border flex items-center justify-center transition-all ${bgSettings.fadingCorner ? 'bg-blue-600 border-blue-600 text-white' : 'border-slate-300'}`}>
-                          {bgSettings.fadingCorner && <Check size={10} />}
-                        </div>
-                      </button>
-                    </div>
-                    <div className="grid grid-cols-5 gap-1.5 p-1">
-                      {PATTERNS.slice(0, 15).map((p) => (
-                        <button 
-                          key={p.id}
-                          onClick={() => setBgSettings({...bgSettings, patternId: p.id})}
-                          className={`aspect-square rounded-xl border flex items-center justify-center overflow-hidden transition-all relative ${bgSettings.patternId === p.id ? 'border-blue-500 shadow-sm ring-2 ring-blue-500/10' : 'border-slate-200 bg-white hover:border-slate-300'}`}
-                        >
-                          {p.id === 'none' ? <span className="text-[8px] font-bold text-slate-400">BRAK</span> : <div className="w-full h-full" style={{ backgroundImage: p.css, backgroundSize: '15px 15px' }} />}
-                        </button>
-                      ))}
+                      {BACKGROUNDS.map(bg => <button key={bg.id} onClick={() => setOverlayImageUrl(bg.url)} className={`aspect-square rounded-lg border-2 transition-all overflow-hidden ${overlayImageUrl === bg.url ? 'border-blue-500 scale-105 z-10 shadow-lg' : 'border-slate-100 opacity-60 hover:opacity-100'}`}><div className="w-full h-full bg-cover bg-center" style={{ backgroundImage: bg.url ? `url(${bg.url})` : 'none', backgroundColor: bg.url ? 'transparent' : '#eee' }} /></button>)}
                     </div>
                   </div>
                 </div>
               </section>
 
               <section className="space-y-4">
-                <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                  <LinkIcon size={14}/> Linki (Ostatni slajd)
-                </label>
+                <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><LinkIcon size={14}/> Linki (Ostatni slajd)</label>
                 <div className="space-y-2">
                   {clnLinks.map((link, i) => (
                     <div key={i} className="flex gap-2">
                       <input type="text" placeholder="https://..." className="flex-grow p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none focus:border-blue-300 transition-all shadow-sm font-medium" value={link} onChange={(e) => {const nl = [...clnLinks]; nl[i] = e.target.value; setClnLinks(nl);}} />
-                      {clnLinks.length > 1 && (
-                        <button onClick={() => setClnLinks(clnLinks.filter((_, idx) => idx !== i))} className="p-3 text-rose-400 hover:bg-rose-50 rounded-xl transition-all shadow-sm"><Trash2 size={16}/></button>
-                      )}
+                      {clnLinks.length > 1 && <button onClick={() => setClnLinks(clnLinks.filter((_, idx) => idx !== i))} className="p-3 text-rose-400 hover:bg-rose-50 rounded-xl transition-all shadow-sm"><Trash2 size={16}/></button>}
                     </div>
                   ))}
                   <button onClick={() => setClnLinks([...clnLinks, ''])} className="w-full py-2.5 border border-dashed border-slate-300 rounded-2xl text-[10px] font-black text-slate-500 hover:bg-slate-50 hover:border-blue-400 hover:text-blue-500 transition-all">+ DODAJ LINK</button>
@@ -555,17 +614,9 @@ const App: React.FC = () => {
               </section>
 
               <section className="space-y-4">
-                <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                  <User size={14}/> Branding
-                </label>
+                <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><User size={14}/> Branding</label>
                 <div className="space-y-3">
-                  <input 
-                    type="text" 
-                    className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-bold outline-none focus:ring-4 focus:ring-blue-500/10 transition-all shadow-sm" 
-                    value={currentProfile.handle} 
-                    onChange={(e) => activeProfileType === 'personal' ? setPersonalProfile({...personalProfile, handle: e.target.value}) : setCompanyProfile({...companyProfile, handle: e.target.value})} 
-                    placeholder="@Uzytkownik"
-                  />
+                  <input type="text" className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-bold outline-none focus:ring-4 focus:ring-blue-500/10 transition-all shadow-sm" value={currentProfile.handle} onChange={(e) => activeProfileType === 'personal' ? setPersonalProfile({...personalProfile, handle: e.target.value}) : setCompanyProfile({...companyProfile, handle: e.target.value})} placeholder="@Uzytkownik" />
                   <div className="grid grid-cols-2 gap-4">
                     <label className="flex flex-col items-center justify-center p-4 border-2 border-dashed border-slate-200 rounded-[2rem] cursor-pointer hover:bg-slate-50 hover:border-blue-400 transition-all bg-white shadow-sm group">
                       <input type="file" className="hidden" accept="image/*" onChange={(e) => handleFileUpload(e, (url) => activeProfileType === 'personal' ? setPersonalProfile({...personalProfile, photoUrl: url}) : setCompanyProfile({...companyProfile, photoUrl: url}))} />
@@ -582,25 +633,17 @@ const App: React.FC = () => {
               </section>
 
               <div className="pt-10 space-y-4">
-                <button 
-                  onClick={handleGenerate} 
-                  disabled={loading || !topic} 
-                  className="w-full p-5 bg-blue-600 hover:bg-blue-700 text-white rounded-[2rem] font-black text-sm shadow-2xl shadow-blue-500/40 flex items-center justify-center gap-3 transition-all active:scale-95 disabled:opacity-50"
-                >
-                  {loading ? <RefreshCw className="animate-spin" size={20}/> : <Sparkles size={20}/>}
-                  GENERUJ TREŚĆ AI
+                <button onClick={handleGenerate} disabled={loading || !topic} className="w-full p-5 bg-blue-600 hover:bg-blue-700 text-white rounded-[2rem] font-black text-sm shadow-2xl shadow-blue-500/40 flex items-center justify-center gap-3 transition-all active:scale-95 disabled:opacity-50">
+                  {loading ? <RefreshCw className="animate-spin" size={20}/> : <Sparkles size={20}/>} GENERUJ TREŚĆ AI
                 </button>
                 <div className="relative">
-                  <button 
-                    onClick={() => setShowExportMenu(!showExportMenu)}
-                    className="w-full p-4 bg-white border border-slate-200 rounded-[2rem] font-bold text-xs hover:bg-slate-50 transition-all flex items-center justify-center gap-2 shadow-sm text-slate-600"
-                  >
+                  <button onClick={() => setShowExportMenu(!showExportMenu)} className="w-full p-4 bg-white border border-slate-200 rounded-[2rem] font-bold text-xs hover:bg-slate-50 transition-all flex items-center justify-center gap-2 shadow-sm text-slate-600">
                     <FileDown size={18}/> EKSPORTUJ KARUZELĘ
                   </button>
                   {showExportMenu && (
                     <div className="absolute bottom-full left-0 right-0 mb-4 bg-white border border-slate-200 rounded-3xl shadow-2xl p-2 z-50 flex flex-col gap-1 overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-200">
                       <button onClick={() => downloadAllImages('png')} className="flex items-center gap-3 w-full p-4 text-xs font-black text-slate-700 hover:bg-blue-50 hover:text-blue-600 transition-all rounded-2xl"><ImageIcon size={18}/> Pobierz jako PNG</button>
-                      <button onClick={() => downloadAllImages('jpeg')} className="flex items-center gap-3 w-full p-4 text-xs font-black text-slate-700 hover:bg-blue-50 hover:text-blue-600 transition-all rounded-2xl"><Share2 size={18}/> Pobierz jako JPG</button>
+                      <button onClick={() => downloadAllImages('jpeg')} className="flex items-center gap-3 w-full p-4 text-xs font-black text-slate-700 hover:bg-blue-50 hover:text-blue-600 transition-all rounded-2xl"><ImageIcon size={18}/> Pobierz jako JPG</button>
                       <button onClick={downloadAsPDF} className="flex items-center gap-3 w-full p-4 text-xs font-black text-slate-700 hover:bg-blue-50 hover:text-blue-600 transition-all rounded-2xl"><FileText size={18}/> Eksportuj do PDF</button>
                     </div>
                   )}
@@ -611,102 +654,40 @@ const App: React.FC = () => {
         </div>
       </aside>
 
-      {/* Main Preview Area */}
+      {/* Main Preview */}
       <main className="flex-grow bg-[#f8fafc] overflow-y-auto p-4 lg:p-8 flex flex-col items-center scroll-smooth relative">
         <div className="w-full max-w-7xl flex flex-col items-center gap-12 pb-32">
-          
-          {/* Main Slide Container with better scaling */}
           <div className="flex flex-col xl:flex-row items-center justify-center gap-12 w-full mt-8">
             <div className="relative flex items-center justify-center bg-slate-200 rounded-[4rem] p-10 shadow-inner overflow-hidden min-h-[500px] w-full max-w-[900px]">
               <div className={`transition-all duration-700 transform origin-center ${isAnimating ? 'scale-[0.45] opacity-80' : 'scale-[0.4] md:scale-[0.45] lg:scale-[0.38] xl:scale-[0.42] 2xl:scale-[0.5]'}`}>
-                <Slide 
-                  id="active-preview-slide"
-                  data={slides[activeSlide]} 
-                  theme={currentTheme}
-                  index={activeSlide}
-                  total={slides.length}
-                  profile={currentProfile}
-                  aspectRatio={aspectRatio}
-                  layout={slideLayout}
-                  backgroundImage={overlayImageUrl}
-                  textEffect={textEffect}
-                  referenceLinks={clnLinks}
-                  titleColor={titleColor}
-                  bgSettings={bgSettings}
-                />
+                <Slide id="active-preview-slide" data={slides[activeSlide]} theme={currentTheme} fontOverride={fontFamily} index={activeSlide} total={slides.length} profile={currentProfile} aspectRatio={aspectRatio} layout={slideLayout} backgroundImage={overlayImageUrl} textEffect={textEffect} referenceLinks={clnLinks} titleColor={titleColor} titleSize={titleSize} bodySize={bodySize} bgSettings={bgSettings} />
               </div>
-              
-              {/* Navigation buttons relative to the container */}
-              <div className="absolute top-1/2 left-4 -translate-y-1/2 z-50">
-                <button onClick={() => setActiveSlide(Math.max(0, activeSlide - 1))} className="p-4 rounded-full bg-white shadow-xl border border-slate-100 transition-all hover:bg-blue-50 hover:text-blue-600 active:scale-90"><ChevronLeft size={32}/></button>
-              </div>
-              <div className="absolute top-1/2 right-4 -translate-y-1/2 z-50">
-                <button onClick={() => setActiveSlide(Math.min(slides.length - 1, activeSlide + 1))} className="p-4 rounded-full bg-white shadow-xl border border-slate-100 transition-all hover:bg-blue-50 hover:text-blue-600 active:scale-90"><ChevronRight size={32}/></button>
-              </div>
+              <div className="absolute top-1/2 left-4 -translate-y-1/2 z-50"><button onClick={() => setActiveSlide(Math.max(0, activeSlide - 1))} className="p-4 rounded-full bg-white shadow-xl border border-slate-100 transition-all hover:bg-blue-50 hover:text-blue-600 active:scale-90"><ChevronLeft size={32}/></button></div>
+              <div className="absolute top-1/2 right-4 -translate-y-1/2 z-50"><button onClick={() => setActiveSlide(Math.min(slides.length - 1, activeSlide + 1))} className="p-4 rounded-full bg-white shadow-xl border border-slate-100 transition-all hover:bg-blue-50 hover:text-blue-600 active:scale-90"><ChevronRight size={32}/></button></div>
             </div>
-
-            {/* Slide Editor Panel */}
             <div className="w-full max-w-md space-y-6">
               <div className="bg-white p-8 rounded-[3rem] shadow-xl border border-white space-y-6">
                 <div className="flex justify-between items-center border-b border-slate-50 pb-4">
-                  <div>
-                    <h3 className="text-xs font-black uppercase tracking-[0.2em] text-blue-600">Edytor Slajdu</h3>
-                    <p className="text-[9px] font-bold text-slate-300 uppercase mt-1">Slajd {activeSlide + 1} z {slides.length}</p>
-                  </div>
-                  <div className="flex gap-1.5">
-                    <button onClick={() => {const ns = [...slides]; ns.splice(activeSlide + 1, 0, {title: 'Nowy Slajd', content: 'Opis...'}); setSlides(ns); setActiveSlide(activeSlide + 1);}} className="p-2.5 bg-slate-50 rounded-xl text-slate-400 hover:text-blue-600 transition-all shadow-sm"><Plus size={16}/></button>
-                    <button onClick={() => {if (slides.length > 1) {const newSlides = slides.filter((_, i) => i !== activeSlide); setSlides(newSlides); setActiveSlide(Math.max(0, activeSlide - 1));}}} className="p-2.5 bg-rose-50 rounded-xl text-rose-400 hover:text-rose-600 transition-all shadow-sm"><Trash2 size={16}/></button>
-                  </div>
+                  <div><h3 className="text-xs font-black uppercase tracking-[0.2em] text-blue-600">Edytor Slajdu</h3><p className="text-[9px] font-bold text-slate-300 uppercase mt-1">Slajd {activeSlide + 1} z {slides.length}</p></div>
+                  <div className="flex gap-1.5"><button onClick={() => {const ns = [...slides]; ns.splice(activeSlide + 1, 0, {title: 'Nowy Slajd', content: 'Opis...'}); setSlides(ns); setActiveSlide(activeSlide + 1);}} className="p-2.5 bg-slate-50 rounded-xl text-slate-400 hover:text-blue-600 transition-all shadow-sm"><Plus size={16}/></button><button onClick={() => {if (slides.length > 1) {const newSlides = slides.filter((_, i) => i !== activeSlide); setSlides(newSlides); setActiveSlide(Math.max(0, activeSlide - 1));}}} className="p-2.5 bg-rose-50 rounded-xl text-rose-400 hover:text-rose-600 transition-all shadow-sm"><Trash2 size={16}/></button></div>
                 </div>
                 <div className="space-y-4">
-                  <div className="space-y-1.5">
-                    <label className="text-[9px] font-black text-slate-400 uppercase ml-1 flex items-center gap-1.5"><TypeIcon size={12}/> Tytuł</label>
-                    <input type="text" value={slides[activeSlide]?.title || ''} onChange={(e) => {const ns = [...slides]; ns[activeSlide].title = e.target.value; setSlides(ns);}} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold outline-none focus:ring-2 focus:ring-blue-500/10 transition-all text-base" />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-[9px] font-black text-slate-400 uppercase ml-1 flex items-center gap-1.5"><FileText size={12}/> Treść</label>
-                    <textarea rows={5} value={slides[activeSlide]?.content || ''} onChange={(e) => {const ns = [...slides]; ns[activeSlide].content = e.target.value; setSlides(ns);}} className="w-full p-5 bg-slate-50 border border-slate-200 rounded-[1.5rem] outline-none focus:ring-2 focus:ring-blue-500/10 resize-none leading-relaxed text-xs font-bold text-slate-600 shadow-inner" />
-                  </div>
+                  <div className="space-y-1.5"><label className="text-[9px] font-black text-slate-400 uppercase ml-1 flex items-center gap-1.5"><TypeIcon size={12}/> Tytuł</label><input type="text" value={slides[activeSlide]?.title || ''} onChange={(e) => {const ns = [...slides]; ns[activeSlide].title = e.target.value; setSlides(ns);}} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold outline-none focus:ring-2 focus:ring-blue-500/10 transition-all text-base" /></div>
+                  <div className="space-y-1.5"><label className="text-[9px] font-black text-slate-400 uppercase ml-1 flex items-center gap-1.5"><FileText size={12}/> Treść</label><textarea rows={5} value={slides[activeSlide]?.content || ''} onChange={(e) => {const ns = [...slides]; ns[activeSlide].content = e.target.value; setSlides(ns);}} className="w-full p-5 bg-slate-50 border border-slate-200 rounded-[1.5rem] outline-none focus:ring-2 focus:ring-blue-500/10 resize-none leading-relaxed text-xs font-bold text-slate-600 shadow-inner" /></div>
                 </div>
               </div>
-              
-              <div className="grid grid-cols-2 gap-3">
-                {FORMATS.map(f => (
-                  <button key={f.value} onClick={() => setAspectRatio(f.value)} className={`p-4 rounded-[2rem] border-2 transition-all text-left flex flex-col h-full justify-center ${aspectRatio === f.value ? 'border-blue-500 bg-white shadow-lg' : 'border-transparent bg-white/50 opacity-60 grayscale hover:opacity-100 hover:grayscale-0'}`}>
-                    <div className="text-[9px] font-black text-slate-900 uppercase leading-tight">{f.label}</div>
-                    <div className="text-[7px] font-bold text-slate-400 mt-1 uppercase tracking-widest">{f.desc}</div>
-                  </button>
-                ))}
+              <div className="bg-white p-6 rounded-[2.5rem] shadow-lg border border-slate-50 space-y-4">
+                <div className="flex justify-between items-center"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><Layout size={14}/> Układ Slajdu</label>{slideLayout === 'icon-heavy' && <button onClick={generateIconsAI} disabled={iconGenerating} className="text-[10px] font-black text-blue-600 flex items-center gap-1 hover:bg-blue-50 px-3 py-1 rounded-full transition-all disabled:opacity-50">{iconGenerating ? <RefreshCw size={12} className="animate-spin"/> : <Sparkles size={12}/>} Generuj Ikony AI</button>}</div>
+                <div className="grid grid-cols-2 gap-2">{LAYOUTS.map(l => <button key={l.value} onClick={() => setSlideLayout(l.value)} className={`py-2 px-3 rounded-xl text-[10px] font-black uppercase transition-all border-2 ${slideLayout === l.value ? 'bg-blue-600 border-blue-600 text-white shadow-md' : 'bg-slate-50 border-transparent text-slate-400 hover:bg-slate-100'}`}>{l.label}</button>)}</div>
               </div>
+              <div className="grid grid-cols-2 gap-3">{FORMATS.map(f => <button key={f.value} onClick={() => setAspectRatio(f.value)} className={`p-4 rounded-[2rem] border-2 transition-all text-left flex flex-col h-full justify-center ${aspectRatio === f.value ? 'border-blue-500 bg-white shadow-lg' : 'border-transparent bg-white/50 opacity-60 grayscale hover:opacity-100 hover:grayscale-0'}`}><div className="text-[9px] font-black text-slate-900 uppercase leading-tight">{f.label}</div><div className="text-[7px] font-bold text-slate-400 mt-1 uppercase tracking-widest">{f.desc}</div></button>)}</div>
             </div>
           </div>
 
-          {/* Grid Preview - Smallest thumbnails that fit the screen width */}
-          <div className="w-full pt-16 border-t border-slate-200 overflow-hidden">
-            <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.4em] mb-12 text-center">Szybki Przegląd Całości</h4>
+          <div className="w-full pt-16 border-t border-slate-200 overflow-hidden text-center">
+            <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.4em] mb-12">Szybki Przegląd Całości</h4>
             <div className="flex flex-wrap justify-center gap-12 lg:gap-16 items-start px-8">
-              {slides.map((s, i) => (
-                <div key={i} className={`relative transition-all duration-700 cursor-pointer ${activeSlide === i ? 'scale-110 ring-4 ring-blue-500/20 rounded-[2rem]' : 'opacity-40 hover:opacity-100 grayscale-[40%] hover:scale-105'}`} onClick={() => setActiveSlide(i)}>
-                  <div className="scale-[0.12] lg:scale-[0.15] origin-top -mb-[105px] lg:-mb-[120px]">
-                    <Slide 
-                      id={`grid-preview-${i}`}
-                      data={s} 
-                      theme={currentTheme}
-                      index={i}
-                      total={slides.length}
-                      profile={currentProfile}
-                      aspectRatio={aspectRatio}
-                      layout={slideLayout}
-                      backgroundImage={overlayImageUrl}
-                      textEffect={textEffect}
-                      referenceLinks={clnLinks}
-                      titleColor={titleColor}
-                      bgSettings={bgSettings}
-                    />
-                  </div>
-                  <div className={`absolute -bottom-6 left-1/2 -translate-x-1/2 text-[9px] font-black uppercase transition-colors ${activeSlide === i ? 'text-blue-600' : 'text-slate-300'}`}>Slajd {i+1}</div>
-                </div>
-              ))}
+              {slides.map((s, i) => <div key={i} className={`relative transition-all duration-700 cursor-pointer ${activeSlide === i ? 'scale-110 ring-4 ring-blue-500/20 rounded-[2rem]' : 'opacity-40 hover:opacity-100 grayscale-[40%] hover:scale-105'}`} onClick={() => setActiveSlide(i)}><div className="scale-[0.12] lg:scale-[0.15] origin-top -mb-[105px] lg:-mb-[120px]"><Slide id={`grid-preview-${i}`} data={s} theme={currentTheme} fontOverride={fontFamily} index={i} total={slides.length} profile={currentProfile} aspectRatio={aspectRatio} layout={slideLayout} backgroundImage={overlayImageUrl} textEffect={textEffect} referenceLinks={clnLinks} titleColor={titleColor} titleSize={titleSize} bodySize={bodySize} bgSettings={bgSettings} /></div><div className={`absolute -bottom-6 left-1/2 -translate-x-1/2 text-[9px] font-black uppercase transition-colors ${activeSlide === i ? 'text-blue-600' : 'text-slate-300'}`}>Slajd {i+1}</div></div>)}
             </div>
           </div>
         </div>
